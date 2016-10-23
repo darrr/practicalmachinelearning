@@ -1,0 +1,72 @@
+---
+title: "Practical Machine Learning"
+author: "Darrr"
+date: "October 23, 2016"
+output: html_document
+---
+#Preprocessing the data
+
+```{r results='hide'}
+testing<-read.csv("C:\\Users\\dlazu\\projects\\Coursera\\Practical_Machine_Learning\\pml-testing.csv",row.names=1,na.strings = "NA",header=TRUE)
+
+training<-read.csv("C:\\Users\\dlazu\\projects\\Coursera\\Practical_Machine_Learning\\pml-training.csv",row.names=1,na.strings = "",header=TRUE)
+
+library(caret)
+library(randomForest)
+```
+Now we have to remove colums with predictors that have one unique value, than remove missing values and unnecessary columns, because it will not help to fit the model.
+```{r results='hide'}
+# Remove near zero covariates
+nsv <- nearZeroVar(training,saveMetrics=TRUE)
+training <- training[,!nsv$nzv]
+testing <- testing[,!nsv$nzv]
+
+# Remove variables with missing values
+training_filter_na <- training[,(colSums(is.na(training)) == 0)]
+testing_filter_na <- testing[,(colSums(is.na(testing)) == 0)]
+
+# Remove unnecessary columns
+colRm_train <- c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window")
+colRm_test <- c("user_name","raw_timestamp_part_1","raw_timestamp_part_2","cvtd_timestamp","num_window","problem_id")
+training_colRm <- training_filter_na[,!(names(training_filter_na) %in% colRm_train)]
+testing_colRm <- testing_filter_na[,!(names(testing_filter_na) %in% colRm_test)]
+dim(training_colRm)
+dim(testing_colRm)
+```
+Now we split preprocessed data into training and validation sets.
+```{r results='hide'}
+inTrain <- createDataPartition(y=training$classe, p=0.7, list=FALSE)
+training_clean <- training_colRm[inTrain,]
+validation_clean <- training_colRm[-inTrain,]
+```
+Now we check the correlation between variables. Seems like it`s near zero, and no predictors strongly correlated with the outcome variable, so linear regression model may not be a good option. Random forest model may be more robust for this data.
+
+```{r results='hide'}
+cor <- abs(sapply(colnames(training_clean[, -ncol(training)]), function(x) cor(as.numeric(training_clean[, x]), as.numeric(training_clean$classe), method = "spearman")))
+```
+#Random Forest Model
+
+```{r}
+set.seed(54321)
+# Fit rf model
+modelFit <- randomForest(classe ~., data = training_clean)
+validation_pred <- predict(modelFit, newdata=validation_clean)
+# Check model performance
+confusionMatrix(validation_pred,validation_clean$classe)
+```
+
+#Prediction
+```{r}
+testing_pred <- predict(modelFit, newdata=testing_colRm)
+write_files <- function(x) {
+        n <- length(x)
+        for (i in 1:n) {
+                filename <- paste0("problem_id", i, ".txt")
+                write.table(x[i], file=filename, quote=FALSE, row.names=FALSE,col.names=FALSE)
+        }
+}
+write_files(testing_pred)
+testing_pred
+```
+#Results
+After preprocessing and applying random forest model we get 99% acurate result
